@@ -1,11 +1,15 @@
-import { render } from "./pool";
+import { render } from "./pool.ts";
+import fs from "fs/promises";
 
 async function main() {
-  const jobs = Array.from({ length: 20 }, (_, i) => render(`PDF ${i}`));
+  const typstContent = `= Fluxprint Hello from Typst.`;
 
-  const results = await Promise.all(jobs);
+  const pdf = await render(typstContent);
 
-  console.log(results.length);
+  console.log("PDF size:", pdf.length);
+
+  // optional test output
+  await fs.writeFile("test.pdf", pdf);
 }
 
 main();

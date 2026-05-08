@@ -1,7 +1,31 @@
+import { execFile } from "child_process";
+import { promisify } from "util";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import crypto from "crypto";
+
+const execFileAsync = promisify(execFile);
+
 export async function renderPdf(input: string): Promise<Buffer> {
-  // temporary fake renderer
+  //temprory
+  const id = crypto.randomUUID();
 
-  await new Promise((r) => setTimeout(r, 100));
+  const inputPath = path.join(os.tmpdir(), `${id}.typ`);
+  const outputPath = path.join(os.tmpdir(), `${id}.pdf`);
 
-  return Buffer.from(`PDF: ${input}`);
+  try {
+    await fs.writeFile(inputPath, input);
+
+    //run typst compiler
+    await execFileAsync("typst", ["compile", inputPath, outputPath]);
+
+    //read generated pdf
+    const pdfBuffer = await fs.readFile(outputPath);
+
+    return pdfBuffer;
+  } finally {
+    //cleanup
+    await Promise.allSettled([fs.unlink(inputPath), fs.unlink(outputPath)]);
+  }
 }
