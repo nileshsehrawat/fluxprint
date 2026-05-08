@@ -1,12 +1,13 @@
 import { parentPort } from "worker_threads";
-import { renderPdf } from "./renderer";
+import { renderPdf } from "./renderer.ts";
 
 parentPort?.on("message", async (input: string) => {
   try {
-    const pdfBufffer = await renderPdf(input);
+    const pdfBuffer = await renderPdf(input);
+
     parentPort?.postMessage({
       success: true,
-      data: pdfBufffer,
+      data: pdfBuffer,
     });
   } catch (error) {
     parentPort?.postMessage({
