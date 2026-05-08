@@ -4,6 +4,7 @@ import { Worker } from "worker_threads";
 //import path from "path";
 
 const WORKER_COUNT = 8;
+const MAX_QUEUE_SIZE = 100;
 
 type PoolWorker = {
   worker: Worker;
@@ -85,6 +86,13 @@ function processQueue() {
 //The render function that will be called by the main thread
 export function render(input: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    //limit queue size
+    const pendingJobs = queue.length + workers.filter((w) => w.busy).length;
+    if (pendingJobs >= MAX_QUEUE_SIZE) {
+      reject(new Error("Renderer overloaded. Try again later."));
+      return;
+    }
+
     //Add job to the queue
     queue.push({
       input,

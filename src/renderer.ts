@@ -1,31 +1,38 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-import os from "os";
-import path from "path";
-import crypto from "crypto";
-
-const execFileAsync = promisify(execFile);
+import { spawn } from "child_process";
 
 export async function renderPdf(input: string): Promise<Buffer> {
-  //temprory
-  const id = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const typst = spawn("typst", ["compile", "-", "-"]);
 
-  const inputPath = path.join(os.tmpdir(), `${id}.typ`);
-  const outputPath = path.join(os.tmpdir(), `${id}.pdf`);
+    const chunks: Buffer[] = [];
+    let totalLength = 0;
 
-  try {
-    await fs.writeFile(inputPath, input);
+    typst.stdout.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+      totalLength += chunk.length;
+    });
 
-    //run typst compiler
-    await execFileAsync("typst", ["compile", inputPath, outputPath]);
+    const errorChunks: Buffer[] = [];
 
-    //read generated pdf
-    const pdfBuffer = await fs.readFile(outputPath);
+    typst.stderr.on("data", (chunk: Buffer) => {
+      errorChunks.push(chunk);
+    });
 
-    return pdfBuffer;
-  } finally {
-    //cleanup
-    await Promise.allSettled([fs.unlink(inputPath), fs.unlink(outputPath)]);
-  }
+    typst.on("error", reject);
+
+    typst.on("close", (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(chunks, totalLength));
+      } else {
+        reject(
+          new Error(
+            `Typst exited with code ${code}\n${Buffer.concat(errorChunks).toString()}`,
+          ),
+        );
+      }
+    });
+
+    typst.stdin.write(input);
+    typst.stdin.end();
+  });
 }
