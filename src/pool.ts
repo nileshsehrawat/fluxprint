@@ -1,3 +1,5 @@
+//moving from parallelism to controlled concurrency with a worker pool
+
 import { Worker } from "worker_threads";
 import path from "path";
 
@@ -8,38 +10,68 @@ type PoolWorker = {
   busy: boolean;
 };
 
+type Job = {
+  input: string;
+  resolve: (value: Buffer) => void;
+  reject: (reason?: any) => void;
+};
+
 const workers: PoolWorker[] = [];
+
+const queue: Job[] = [];
 
 //crate workers
 for (let i = 0; i < WORKER_COUNT; i++) {
   workers.push({
-    worker: new Worker(path.resolve(__dirname, "./worker.ts")),
+    worker: new Worker(new URL("./worker.ts", import.meta.url), {
+      execArgv: ["--import", "tsx"],
+    }),
     busy: false,
   });
 }
 
-//round robin scheduling
-let current = 0;
+function processQueue() {
+  //find free workers
+  const poolWorker = workers.find((w) => !w.busy);
+
+  if (!poolWorker) {
+    return;
+  }
+
+  const job = queue.shift(); //get next job from queue
+
+  if (!job) {
+    return;
+  }
+
+  poolWorker.busy = true; //mark all workers as busy
+
+  //Listen for workers result
+  poolWorker.worker.once("message", (message) => {
+    // Worker is free again
+    poolWorker.busy = false;
+    // Process next queued job
+    processQueue();
+    if (message.success) {
+      job.resolve(message.data);
+    } else {
+      job.reject(message.error);
+    }
+  });
+  //send work to worker
+  poolWorker.worker.postMessage(job.input);
+}
 
 //The render function that will be called by the main thread
 export function render(input: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    //pick current worker
-    const poolWorker = workers[current];
-
-    //move to next worker for next job
-    current = current + (1 % workers.length);
-
-    //listen for response from worker
-    poolWorker.worker.once("message", (message) => {
-      if (message.success) {
-        resolve(message.data);
-      } else {
-        reject(new Error(message.error));
-      }
+    //Add job to the queue
+    queue.push({
+      input,
+      resolve,
+      reject,
     });
 
-    //send work to worker
-    poolWorker.worker.postMessage(input);
+    processQueue(); //Try to process the queue
   });
 }
